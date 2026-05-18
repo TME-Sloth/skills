@@ -26,13 +26,37 @@ disable: false
 | depth     | 自动    | 仅当用户显式要求限制节点树遍历深度时传入，否则不加                                                                  |
 | local     | `false` | **默认不要加**。仅当用户明确要求"使用本地缓存"才传入                                                                |
 | update    | `false` | 仅当用户明确表示"修改/更新之前生成的代码"时传入；新建代码时一律不传                                                 |
-| silent    | `true`  | 默认静默。仅当用户要求交互式配置页面时显式传 `--silent=false`                                                       |
+| silent    | `false` | 默认打开交互式配置页面。仅当用户明确要求静默、不打开配置页时传 `--silent`                                          |
 
 > ⚠️ `local` 与 `update` 都是**显式触发**参数，默认一律不传。不要因为"为了更快"而主动加 `--local`——运行没有缓存会直接失败。
 
 ### 环境检查
 
-执行 `sloth --version` 确认 CLI 可用。不可用则跳转[错误排除](#错误排除)。
+执行 `sloth --version` 确认 CLI 可用。
+
+如果 `sloth` 不存在，先自动安装：
+
+```bash
+pnpm install -g sloth-d2c-mcp --registry=https://registry.npmjs.org/
+```
+
+如果当前环境没有 `pnpm`，使用 npm：
+
+```bash
+npm install -g sloth-d2c-mcp --registry=https://registry.npmjs.org/
+```
+
+安装后再次执行 `sloth --version` 校验，仍不可用则跳转[错误排除](#错误排除)。
+
+### 非静默模式准备
+
+默认会打开交互式配置页面，执行 `sloth d2c` 前先启动 Web 服务：
+
+```bash
+sloth server start
+```
+
+确认服务启动后，再执行 `sloth d2c ...`。静默模式不需要启动 Web 服务。
 
 ## 执行流程
 
@@ -55,7 +79,8 @@ sloth d2c \
   [--depth <n>] \
   [--local] \
   [--update] \
-  --silent --json
+  [--silent] \
+  --json
 ```
 
 CLI 成功时以 JSON 形式输出到 stdout：
@@ -92,9 +117,10 @@ CLI 成功时以 JSON 形式输出到 stdout：
 
 | 错误场景                     | 处理方式                                                                                               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `sloth: command not found`   | 执行 `sloth -v`：有版本号则提示配置 PATH；无版本号则执行 `npm install -g sloth-d2c-mcp` 安装           |
+| `sloth: command not found`   | 优先执行 `pnpm install -g sloth-d2c-mcp --registry=https://registry.npmjs.org/`；没有 pnpm 时执行 `npm install -g sloth-d2c-mcp --registry=https://registry.npmjs.org/` |
 | CLI 退出码非 0 / `ok:false`  | 读取 JSON 中的 `error`/`message` 字段并展示给用户                                                      |
 | 文件不存在（chunksDir 为空） | 提示用户检查 fileKey 和 nodeId 是否正确，**停止执行**                                                  |
+| 非静默模式未打开配置页       | 执行 `sloth server start` 启动 Web 服务后，不传 `--silent` 重试                                        |
 | 超时                         | 建议用户先执行 `sloth server restart` 再重试；或增加 shell 超时配置                                    |
 | 403 错误                     | 未配置有效 Figma Token，提示用户执行 `sloth config` 并配置 `mcp.figmaApiKey`，或使用 `--figma-api-key` |
 | 404 错误                     | 设计稿未找到，提示用户核实 fileKey 和 nodeId                                                           |
