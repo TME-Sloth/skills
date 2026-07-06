@@ -21,6 +21,12 @@ npx skills add git@github.com:TME-Sloth/skills.git
 | --- | --- |
 | [sloth-d2c-skills](./sloth-d2c-skills/) | Figma 设计稿转前端代码（D2C），配合 `sloth d2c` CLI |
 
+## Agents
+
+| 目录 | 说明 |
+| --- | --- |
+| [agents/sloth-d2c-agent.md](./agents/sloth-d2c-agent.md) | D2C 代码片段转换子 Agent，由主 Skill 并行调度 |
+
 ## 仓库地址
 
 - SSH：`git@github.com:TME-Sloth/skills.git`
