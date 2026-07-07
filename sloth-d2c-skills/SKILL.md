@@ -26,7 +26,7 @@ disable: false
 | depth     | 自动    | 仅当用户显式要求限制节点树遍历深度时传入，否则不加                                                                  |
 | local     | `false` | **默认不要加**。仅当用户明确要求"使用本地缓存"才传入                                                                |
 | update    | `false` | 仅当用户明确表示"修改/更新之前生成的代码"时传入；新建代码时一律不传                                                 |
-| silent    | `false` | 默认打开交互式配置页面。仅当用户明确要求静默、不打开配置页时传 `--silent`                                          |
+| silent    | `false` | 默认打开交互式配置页面。仅当用户明确要求静默、不打开配置页时传 `--silent`                                           |
 
 > ⚠️ `local` 与 `update` 都是**显式触发**参数，默认一律不传。不要因为"为了更快"而主动加 `--local`——运行没有缓存会直接失败。
 
@@ -113,15 +113,17 @@ CLI 成功时以 JSON 形式输出到 stdout：
 
 主 Agent 收集第 2 步执行完毕的结果，结合读取 `{chunksDir}/finalGenerate.md` 的内容作为提示词转换代码，写入项目文件中。
 
+如果 `{chunksDir}` 的上级目录存在 `marked-components.todo.json`，在写完代码后必须按 `sloth-d2c-components` skill 的规则消费该文件，把真实写入的组件登记到项目根目录 `.sloth/components.json`。不要调用 MCP `mark_components` 工具；Skills 场景通过本地文件写入完成组件登记。
+
 ## 错误排除
 
-| 错误场景                     | 处理方式                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 错误场景                     | 处理方式                                                                                                                                                                |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sloth: command not found`   | 优先执行 `pnpm install -g sloth-d2c-mcp --registry=https://registry.npmjs.org/`；没有 pnpm 时执行 `npm install -g sloth-d2c-mcp --registry=https://registry.npmjs.org/` |
-| CLI 退出码非 0 / `ok:false`  | 读取 JSON 中的 `error`/`message` 字段并展示给用户                                                      |
-| 文件不存在（chunksDir 为空） | 提示用户检查 fileKey 和 nodeId 是否正确，**停止执行**                                                  |
-| 非静默模式未打开配置页       | 执行 `sloth server start` 启动 Web 服务后，不传 `--silent` 重试                                        |
-| 超时                         | 建议用户先执行 `sloth server restart` 再重试；或增加 shell 超时配置                                    |
-| 403 错误                     | 未配置有效 Figma Token，提示用户执行 `sloth config` 并配置 `mcp.figmaApiKey`，或使用 `--figma-api-key` |
-| 404 错误                     | 设计稿未找到，提示用户核实 fileKey 和 nodeId                                                           |
-| Node 版本过低                | 检查用户 Node 版本是否 ≥ 18                                                                            |
+| CLI 退出码非 0 / `ok:false`  | 读取 JSON 中的 `error`/`message` 字段并展示给用户                                                                                                                       |
+| 文件不存在（chunksDir 为空） | 提示用户检查 fileKey 和 nodeId 是否正确，**停止执行**                                                                                                                   |
+| 非静默模式未打开配置页       | 执行 `sloth server start` 启动 Web 服务后，不传 `--silent` 重试                                                                                                         |
+| 超时                         | 建议用户先执行 `sloth server restart` 再重试；或增加 shell 超时配置                                                                                                     |
+| 403 错误                     | 未配置有效 Figma Token，提示用户执行 `sloth config` 并配置 `mcp.figmaApiKey`，或使用 `--figma-api-key`                                                                  |
+| 404 错误                     | 设计稿未找到，提示用户核实 fileKey 和 nodeId                                                                                                                            |
+| Node 版本过低                | 检查用户 Node 版本是否 ≥ 18                                                                                                                                             |
