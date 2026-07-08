@@ -5,6 +5,7 @@
   "description": "Sloth D2C agent skills 分发包",
   "files": [
     "sloth-d2c-skills",
+    "sloth-d2c-auto-grouping",
     "sloth-d2c-components",
     "agents"
   ]

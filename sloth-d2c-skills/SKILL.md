@@ -27,6 +27,7 @@ disable: false
 | local     | `false` | **默认不要加**。仅当用户明确要求"使用本地缓存"才传入                                                                |
 | update    | `false` | 仅当用户明确表示"修改/更新之前生成的代码"时传入；新建代码时一律不传                                                 |
 | silent    | `false` | 默认打开交互式配置页面。仅当用户明确要求静默、不打开配置页时传 `--silent`                                           |
+| autoGrouping | `false` | 仅当用户明确要求"自动分组"、"AI 分组"、"automatic grouping"、"automatic splitting" 时传 `--auto-grouping` |
 
 > ⚠️ `local` 与 `update` 都是**显式触发**参数，默认一律不传。不要因为"为了更快"而主动加 `--local`——运行没有缓存会直接失败。
 
@@ -79,6 +80,7 @@ sloth d2c \
   [--depth <n>] \
   [--local] \
   [--update] \
+  [--auto-grouping] \
   [--silent] \
   --json
 ```
@@ -96,6 +98,7 @@ CLI 成功时以 JSON 形式输出到 stdout：
 ```
 
 - 解析 JSON 得到 `chunksDir` 与 `convertedNodeId`。
+- 如果 JSON 包含 `autoGroupingHandoff.requiresAutoGrouping=true`，先不要进入代码生成；直接派 subagent 使用 `$sloth-d2c-auto-grouping` 读取 `autoGroupingHandoff.promptPath` 并写入 `autoGroupingHandoff.groupsDataPath`。主 agent 只从本地 `groupsData.json` 重新读取确认结果，确认后重新运行 `autoGroupingHandoff.rerunCommand`；缺失时运行 `sloth d2c --file-key <fileKey> --node-id <nodeId> --local --auto-grouping --json`。
 - `ok=false` 或非零退出码时跳转[错误排除](#错误排除)。
 
 ### Step 2：并行处理代码片段与聚合

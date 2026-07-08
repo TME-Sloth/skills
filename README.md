@@ -20,6 +20,7 @@ npx skills add git@github.com:TME-Sloth/skills.git
 | 目录                                            | 说明                                                                      |
 | ----------------------------------------------- | ------------------------------------------------------------------------- |
 | [sloth-d2c-skills](./sloth-d2c-skills/)         | Figma 设计稿转前端代码（D2C），配合 `sloth d2c` CLI                       |
+| [sloth-d2c-auto-grouping](./sloth-d2c-auto-grouping/) | 消费 `autoGrouping.md` 并写入 `.sloth/**/groupsData.json` 自动分组结果 |
 | [sloth-d2c-components](./sloth-d2c-components/) | 消费 `marked-components.todo.json` 并维护 `.sloth/components.json` 组件库 |
 
 ## Agents
