@@ -104,11 +104,10 @@ CLI 可能返回两类成功结果。
   "plannedChunksDir": ".sloth/<fileKey>/<convertedNodeId>/chunks",
   "pollTargets": {
     "groupsDataPath": ".sloth/<fileKey>/<convertedNodeId>/groupsData.json",
-    "autoGroupingPromptPath": ".sloth/<fileKey>/<convertedNodeId>/autoGrouping.md",
-    "autoGroupingMetaPath": ".sloth/<fileKey>/<convertedNodeId>/autoGrouping.meta.json",
     "componentsPath": ".sloth/components.json",
+    "tasksDir": ".sloth/<fileKey>/<convertedNodeId>/tasks",
     "chunksDir": ".sloth/<fileKey>/<convertedNodeId>/chunks",
-    "submissionMarkerPath": ".sloth/<fileKey>/<convertedNodeId>/loop/events.jsonl"
+    "submissionPath": ".sloth/<fileKey>/<convertedNodeId>/submission.json"
   }
 }
 ```
@@ -130,7 +129,7 @@ CLI 可能返回两类成功结果。
 
 - `action=open_browser_and_poll_sloth` 时，不要等待 CLI 或浏览器；进入“拦截页文件轮询”。
 - `action=consume_chunks` 或 `chunksReady=true` 时，解析 `chunksDir` 与 `convertedNodeId`，并进入 Step 2。
-- 如果 JSON 包含 `autoGroupingHandoff.requiresAutoGrouping=true`，先不要进入代码生成；直接派 subagent 使用 `$sloth-d2c-auto-grouping` 读取 `autoGroupingHandoff.promptPath` 并写入 `autoGroupingHandoff.groupsDataPath`。主 agent 只从本地 `groupsData.json` 重新读取确认结果，确认后继续等待用户在拦截页提交；静默路径需要重新运行 `autoGroupingHandoff.rerunCommand`，缺失时运行 `sloth d2c --file-key <fileKey> --node-id <nodeId> --local --auto-grouping --json`。
+- 如果 JSON 包含 `autoGroupingHandoff.requiresAutoGrouping=true`，按返回的 task 或 `tasksDir/subAgentTask-*.md` 派发 subagent。主 agent 只确认本地产物，然后继续等待用户在拦截页提交。
 - `ok=false` 或非零退出码时跳转[错误排除](#错误排除)。
 
 ### Step 1.5：等待拦截页提交
@@ -139,16 +138,16 @@ CLI 可能返回两类成功结果。
 
 轮询规则：
 
-1. 如果出现 `autoGrouping.md` 或 `autoGrouping.meta.json`，且没有新鲜有效的 `groupsData.json`，派发 subagent 使用 `$sloth-d2c-auto-grouping` 读取 prompt 并写入 `groupsData.json`。完成后继续等待用户在拦截页确认/提交。
-2. 如果用户在拦截页导入组件、复制组件分析 Prompt，或 `.sloth/components.json` 需要更新，派发 subagent 使用 `$sloth-d2c-components` 维护项目根目录 `.sloth/components.json`。完成后继续等待用户提交。
+1. 优先扫描 `tasksDir/subAgentTask-*.md`。如果 frontmatter 中 `status: pending`，按 `skill` 或 `type` 派发对应 subagent，并把 task 文件路径交给 subagent。
+2. subagent 完成后，只重新读取它声明的本地产物，例如 `groupsData.json` 或 `.sloth/components.json`；不要在主上下文展开任务提示词细节。任务成功后对应 `subAgentTask-*.md` 必须被删除；如果产物有效但任务文件仍存在，主 agent 删除该任务文件，避免重复派发。任务失败时保留文件方便重试。
 3. 如果只有 `groupsData.json`，不要开始生成代码；用户可能还在调整分组、提示词或组件映射。
 4. 只有检测到拦截页提交标记后，才运行 `sloth d2c --local --json` 或返回结果中的 chunk 生成命令，生成/刷新 chunks。
 5. 如果轮询超时，简短说明仍在等待用户提交或子任务完成，不要把它当作转码失败。
 
-提交标记写在 `events.jsonl` 中。检测时只需要确认存在一条 JSON 行满足：
+提交标记写在 `submission.json` 中。检测时只需要确认 JSON 满足：
 
 ```json
-{ "type": "workflow.submitted" }
+{ "status": "submitted", "intent": "initial-generation" }
 ```
 
 不要点击拦截页提交按钮，不要用 DOM、坐标、快捷键或脚本替用户提交。
@@ -168,7 +167,7 @@ CLI 可能返回两类成功结果。
 
 主 Agent 收集第 2 步执行完毕的结果，结合读取 `{chunksDir}/finalGenerate.md` 的内容作为提示词转换代码，写入项目文件中。
 
-如果 `{chunksDir}` 的上级目录存在 `marked-components.todo.json`，在写完代码后必须按 `sloth-d2c-components` skill 的规则消费该文件，把真实写入的组件登记到项目根目录 `.sloth/components.json`。不要调用 MCP `mark_components` 工具；Skills 场景通过本地文件写入完成组件登记。
+如果 `{chunksDir}` 的上级目录存在 `tasks/subAgentTask-componentRegistration-*.md`，在写完代码后派发 `$sloth-d2c-components` 消费组件登记任务，把真实写入的组件登记到项目根目录 `.sloth/components.json`。不要调用 MCP `mark_components` 工具；Skills 场景通过本地文件写入完成组件登记。
 
 ## 错误排除
 
@@ -180,8 +179,8 @@ CLI 可能返回两类成功结果。
 | 非静默模式未打开配置页       | 执行 `sloth server start` 启动 Web 服务后，不传 `--silent` 重试                                                                                                         |
 | 拦截页已打开但没有提交标记 | 继续等待用户提交；如果超时，报告“仍在等待拦截页提交”，不要生成 chunks                                                                                                   |
 | `groupsData.json` 存在但没有提交标记 | 不生成代码；继续等待用户确认/提交                                                                                                                                       |
-| 出现 `autoGrouping.md` / `autoGrouping.meta.json` | 派发 `$sloth-d2c-auto-grouping` 写入并校验 `groupsData.json`，然后继续等待提交                                                                                           |
-| 组件导入/组件登记等待中      | 派发 `$sloth-d2c-components` 更新 `.sloth/components.json`，然后继续等待提交                                                                                             |
+| 出现 `subAgentTask-*.md` | 按 frontmatter 的 `skill` / `type` 派发 subagent；完成后确认本地产物并继续等待提交                                                                                           |
+| 组件导入/组件登记等待中      | 消费 `subAgentTask-componentRegistration-*.md`；没有 task 时只按明确组件包/组件目录请求处理                                                                                             |
 | 超时                         | 建议用户先执行 `sloth server restart` 再重试；或增加 shell 超时配置                                                                                                     |
 | 403 错误                     | 未配置有效 Figma Token，提示用户执行 `sloth config` 并配置 `mcp.figmaApiKey`，或使用 `--figma-api-key`                                                                  |
 | 404 错误                     | 设计稿未找到，提示用户核实 fileKey 和 nodeId                                                                                                                            |
