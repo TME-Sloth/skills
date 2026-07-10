@@ -138,11 +138,11 @@ chunks 已就绪结果（可直接消费 chunks）：
 
 轮询规则：
 
-1. 视情况做短轮询：大约每 10 秒扫描一次，最多约 3 分钟。
+1. 拦截页打开后必须做短轮询，不能直接结束本回合：大约每 10 秒扫描一次，最多约 3 分钟。
 2. 优先扫描 `tasksDir/subAgentTask-*.md`。如果 frontmatter 中 `status: pending`，按 `skill` 或 `type` 派发对应 subagent，并把 task 文件路径交给 subagent。
 3. subagent 完成后，只重新读取它声明的本地产物，例如 `groupsData.json` 或 `.sloth/components.json`；不要在主上下文展开任务提示词细节。任务成功后对应 `subAgentTask-*.md` 必须被删除；如果产物有效但任务文件仍存在，主 agent 删除该任务文件，避免重复派发。任务失败时保留文件方便重试。
 4. 如果只有 `groupsData.json`，不要开始生成代码；用户可能还在调整分组、提示词或组件映射。
-5. 只有检测到拦截页提交标记后，才运行 `sloth d2c --local --json` 或返回结果中的 chunk 生成命令，生成/刷新 chunks。
+5. 只有检测到拦截页提交标记后，才运行 `sloth d2c --local --json` 或返回结果中的 chunk 生成命令，生成/刷新 chunks；检测到提交后无需用户再回复“继续”，在同一回合直接进入 Step 2。
 6. 如果短轮询结束仍未检测到提交标记或待处理任务，停止本回合，简短说明仍在等待用户提交；用户回复继续后，再重新读取同一路径。
 
 提交标记写在 `submission.json` 中。检测时只需要确认 JSON 满足：
