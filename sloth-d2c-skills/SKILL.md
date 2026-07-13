@@ -97,17 +97,13 @@ CLI 只有两种模式：交互模式会打开拦截页，静默模式不唤起�
   "action": "open_browser_and_poll_sloth",
   "fileKey": "...",
   "nodeId": "...",
-  "convertedNodeId": "...",
   "interceptorUrl": "http://localhost:3100/auth-page?...&useBySkills=1",
-  "readyForCodegen": false,
-  "chunksReady": false,
-  "plannedChunksDir": ".sloth/<fileKey>/<convertedNodeId>/chunks",
   "pollTargets": {
-    "groupsDataPath": ".sloth/<fileKey>/<convertedNodeId>/groupsData.json",
+    "groupsDataPath": ".sloth/<fileKey>/<nodeId>/groupsData.json",
     "componentsPath": ".sloth/components.json",
-    "tasksDir": ".sloth/<fileKey>/<convertedNodeId>/tasks",
-    "chunksDir": ".sloth/<fileKey>/<convertedNodeId>/chunks",
-    "submissionPath": ".sloth/<fileKey>/<convertedNodeId>/submission.json"
+    "tasksDir": ".sloth/<fileKey>/<nodeId>/tasks",
+    "chunksDir": ".sloth/<fileKey>/<nodeId>/chunks",
+    "submissionPath": ".sloth/<fileKey>/<nodeId>/submission.json"
   }
 }
 ```
@@ -120,15 +116,12 @@ chunks 已就绪结果（可直接消费 chunks）：
   "action": "consume_chunks",
   "fileKey": "...",
   "nodeId": "...",
-  "convertedNodeId": "...",
-  "readyForCodegen": true,
-  "chunksReady": true,
-  "chunksDir": ".sloth/<fileKey>/<convertedNodeId>/chunks"
+  "chunksDir": ".sloth/<fileKey>/<nodeId>/chunks"
 }
 ```
 
 - `action=open_browser_and_poll_sloth` 时，按交互模式进入本地文件轮询。
-- `action=consume_chunks` 或 `chunksReady=true` 时，解析 `chunksDir` 与 `convertedNodeId`，并进入 Step 2。静默模式会直接到这里；交互模式在用户提交并生成/刷新 chunks 后也会到这里。
+- `action=consume_chunks` 时，读取 `chunksDir` 并进入 Step 2。静默模式会直接到这里；交互模式在用户提交完成后也会到这里。
 - 如果 JSON 包含 `autoGroupingHandoff.requiresAutoGrouping=true`，按返回的 task 或 `tasksDir/subAgentTask-*.md` 派发 subagent。主 agent 只确认本地产物，然后继续等待用户在拦截页提交。
 - `ok=false` 或非零退出码时跳转[错误排除](#错误排除)。
 
@@ -142,13 +135,13 @@ chunks 已就绪结果（可直接消费 chunks）：
 2. 优先扫描 `tasksDir/subAgentTask-*.md`。如果 frontmatter 中 `status: pending`，按 `skill` 或 `type` 派发对应 subagent，并把 task 文件路径交给 subagent。
 3. subagent 完成后，只重新读取它声明的本地产物，例如 `groupsData.json` 或 `.sloth/components.json`；不要在主上下文展开任务提示词细节。任务成功后对应 `subAgentTask-*.md` 必须被删除；如果产物有效但任务文件仍存在，主 agent 删除该任务文件，避免重复派发。任务失败时保留文件方便重试。
 4. 如果只有 `groupsData.json`，不要开始生成代码；用户可能还在调整分组、提示词或组件映射。
-5. 轮询 `submission.json`。检测到 `{ "status": "submitted", "intent": "initial-generation" }` 后直接进入 Step 2；`status: "failed"` 时读取 `error` 并停止。
+5. 轮询 `submission.json`。检测到 `status: "submitted"` 后直接进入 Step 2；`status: "failed"` 时读取 `error` 并停止。
 6. 如果短轮询结束仍未检测到提交标记或待处理任务，停止本回合，简短说明仍在等待用户提交；用户回复继续后，再重新读取同一路径。
 
 提交标记写在 `submission.json` 中。检测时只需要确认 JSON 满足：
 
 ```json
-{ "status": "submitted", "intent": "initial-generation" }
+{ "status": "submitted" }
 ```
 
 不要点击拦截页提交按钮，不要用 DOM、坐标、快捷键或脚本替用户提交。
