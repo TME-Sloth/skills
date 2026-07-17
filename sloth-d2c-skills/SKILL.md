@@ -51,7 +51,7 @@ npm install -g sloth-d2c-mcp --registry=https://registry.npmjs.org/
 
 ### 交互模式准备
 
-默认使用交互模式：打开拦截页供用户确认配置、分组和组件标记。`sloth d2c --json` 返回后，agent 继续轮询项目 `.sloth/<fileKey>/<nodeId>/` 下的任务文件和提交标记。
+默认使用交互模式：打开拦截页供用户确认配置、分组和组件标记。`sloth d2c --json` 返回后，agent 打开拦截页并运行返回的阻塞式 wait 命令。
 
 执行 `sloth d2c` 前先启动 Web 服务：
 
@@ -87,23 +87,17 @@ sloth d2c \
   --json
 ```
 
-CLI 只有两种模式：交互模式会打开拦截页，静默模式不唤起拦截页。成功返回里常见两类 action：
+CLI 只有两种模式：交互模式会打开拦截页，静默模式不唤起拦截页。CLI 或 `wait.command` 成功后常见三类 action：
 
 交互模式结果（有拦截页）：
 
 ```json
 {
   "ok": true,
-  "action": "open_browser_and_poll_sloth",
-  "fileKey": "...",
-  "nodeId": "...",
+  "action": "open_browser_and_wait",
   "interceptorUrl": "http://localhost:3100/auth-page?...&useBySkills=1",
-  "pollTargets": {
-    "groupsDataPath": ".sloth/<fileKey>/<nodeId>/groupsData.json",
-    "componentsPath": ".sloth/components.json",
-    "tasksDir": ".sloth/<fileKey>/<nodeId>/tasks",
-    "chunksDir": ".sloth/<fileKey>/<nodeId>/chunks",
-    "submissionPath": ".sloth/<fileKey>/<nodeId>/submission.json"
+  "wait": {
+    "command": "sloth d2c wait --file-key '...' --node-id '...' --run-id '...' --json"
   }
 }
 ```
@@ -114,35 +108,49 @@ chunks 已就绪结果（可直接消费 chunks）：
 {
   "ok": true,
   "action": "consume_chunks",
-  "fileKey": "...",
-  "nodeId": "...",
   "chunksDir": ".sloth/<fileKey>/<nodeId>/chunks"
 }
 ```
 
-- `action=open_browser_and_poll_sloth` 时，按交互模式进入本地文件轮询。
+可选 AI 自动分组任务（用户通过 `--auto-grouping` 或拦截页显式启用时可能返回）：
+
+```json
+{
+  "ok": true,
+  "action": "handle_subagent_task",
+  "task": {
+    "path": ".sloth/<fileKey>/<nodeId>/tasks/subAgentTask-autoGrouping-<id>.md",
+    "skill": "sloth-d2c-auto-grouping"
+  }
+}
+```
+
+- `action=open_browser_and_wait` 时，先打开 `interceptorUrl`，再运行 `wait.command` 阻塞等待事件。
+- `action=handle_subagent_task` 时，先按 `task.skill` 派发 `task.path`，不能进入 Step 2。
 - `action=consume_chunks` 时，读取 `chunksDir` 并进入 Step 2。静默模式会直接到这里；交互模式在用户提交完成后也会到这里。
-- 如果 JSON 包含 `autoGroupingHandoff.requiresAutoGrouping=true`，按返回的 task 或 `tasksDir/subAgentTask-*.md` 派发 subagent。主 agent 只确认本地产物，然后继续等待用户在拦截页提交。
+- wait 会先返回已经存在的 pending task，因此任务和提交都统一通过 `wait.command` 接收。
 - `ok=false` 或非零退出码时跳转[错误排除](#错误排除)。
 
 ### Step 1.5：等待拦截页提交
 
-拦截页提交前，agent 只处理本地任务文件，不开始生成代码。`groupsData.json` 只表示已有分组数据，不表示用户已经确认提交。
+拦截页提交前，agent 只处理 wait 返回的任务，不开始生成代码。`groupsData.json` 只表示已有分组数据，不表示用户已经确认提交。
 
-轮询规则：
+等待规则：
 
-1. 拦截页打开后必须做短轮询，不能直接结束本回合：大约每 10 秒扫描一次，最多约 3 分钟。
-2. 优先扫描 `tasksDir/subAgentTask-*.md`。如果 frontmatter 中 `status: pending`，按 `skill` 或 `type` 派发对应 subagent，并把 task 文件路径交给 subagent。
-3. subagent 完成后，只重新读取它声明的本地产物，例如 `groupsData.json` 或 `.sloth/components.json`；不要在主上下文展开任务提示词细节。任务成功后对应 `subAgentTask-*.md` 必须被删除；如果产物有效但任务文件仍存在，主 agent 删除该任务文件，避免重复派发。任务失败时保留文件方便重试。
-4. 如果只有 `groupsData.json`，不要开始生成代码；用户可能还在调整分组、提示词或组件映射。
-5. 轮询 `submission.json`。检测到 `status: "submitted"` 后直接进入 Step 2；`status: "failed"` 时读取 `error` 并停止。
-6. 如果短轮询结束仍未检测到提交标记或待处理任务，停止本回合，简短说明仍在等待用户提交；用户回复继续后，再重新读取同一路径。
+1. 打开拦截页后，在工作区根目录运行返回的 `wait.command`。命令阻塞等待，不设置业务超时，也不要自行扫描 task 或 `submission.json`。
+2. 返回 `action: "handle_subagent_task"` 时，把 `task.path` 交给 `task.skill` 对应的 subagent。只重新读取 subagent 声明的本地产物，不在主上下文展开任务正文。
+3. 任务成功并校验产物后，确认对应 task 文件已删除，再次运行同一个 `wait.command`；任务失败时保留 task 并停止，避免立即重复接收。
+4. 返回 `action: "consume_chunks"` 时，从结果中的 `chunksDir` 进入 Step 2。
+5. 返回 `action: "error"` 或 `ok: false` 时，报告 `error` 并停止。
+6. 首次配置阶段页面不判断 listener，也不会因为 wait 连接暂时结束而自动复制 Prompt；每个 task 完成后应立即重新运行同一个 `wait.command`。
+7. Agent 主动不再等待时，终止 wait 命令即可。以后需要恢复首次流程时，重新运行同一个 wait 命令；它会立即返回已经落盘的 task 或 submitted 事件。
 
-提交标记写在 `submission.json` 中。检测时只需要确认 JSON 满足：
+可选 AI 自动分组只在本 skill 中做入口路由：
 
-```json
-{ "status": "submitted" }
-```
+1. 当 `action: "handle_subagent_task"` 且 `task.skill: "sloth-d2c-auto-grouping"` 时，启动聚焦 subagent，要求它加载 `$sloth-d2c-auto-grouping` 并仅传入 `task.path`。
+2. 主 Agent 不执行分组算法，也不展开 task 正文或完整分组 JSON；只重新读取 subagent 声明的 `groupsData.json` 确认结果。
+3. 交互模式下，任务成功且 task 文件已删除后，重新运行同一个 `wait.command`；静默模式直接返回任务时，执行返回的 `resumeCommand` 恢复 chunks 生成。
+4. 分组失败时保留 task 文件并停止，不绕过分组直接生成代码。
 
 不要点击拦截页提交按钮，不要用 DOM、坐标、快捷键或脚本替用户提交。
 
@@ -160,21 +168,21 @@ chunks 已就绪结果（可直接消费 chunks）：
 
 主 Agent 收集第 2 步执行完毕的结果，结合 `{chunksDir}/finalGenerate.md` 的内容作为提示词转换代码，写入项目文件中。
 
-如果 `{chunksDir}` 的上级目录存在 `tasks/subAgentTask-componentRegistration-*.md`，在写完代码后派发 `$sloth-d2c-components` 消费组件登记任务，把真实写入的组件登记到项目根目录 `.sloth/components.json`。不要调用 MCP `mark_components` 工具；Skills 场景通过本地文件写入完成组件登记。
+如果 `{chunksDir}` 的上级目录存在 `tasks/subAgentTask-componentRegistration-*.md`，在写完代码后派发 `$sloth-d2c-components` 消费组件登记任务，把真实写入的组件登记到项目根目录 `.sloth/components.json`。组件登记通过本地文件完成，不调用 MCP `mark_components` 工具。
 
 ## 错误排除
 
 | 错误场景                     | 处理方式                                                                                                                                                                |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sloth: command not found`   | 优先执行 `pnpm install -g sloth-d2c-mcp --registry=https://registry.npmjs.org/`；没有 pnpm 时执行 `npm install -g sloth-d2c-mcp --registry=https://registry.npmjs.org/` |
-| CLI 退出码非 0 / `ok:false`  | 读取 JSON 中的 `error`/`message` 字段并展示给用户                                                                                                                       |
+| CLI 退出码非 0 / `ok:false`  | 读取 JSON 中的 `error` 字段并展示给用户                                                                                                                               |
 | 文件不存在（chunksDir 为空） | 提示用户检查 fileKey 和 nodeId 是否正确，**停止执行**                                                                                                                   |
 | 交互模式未打开配置页       | 执行 `sloth server start` 启动 Web 服务后，不传 `--silent` 重试                                                                                                         |
-| 拦截页已打开但没有提交标记 | 按短轮询策略等待；到达上限后停止本回合，报告“仍在等待拦截页提交”，不要生成 chunks                                                                                       |
-| `groupsData.json` 存在但没有提交标记 | 不生成代码；按短轮询策略等待用户确认/提交                                                                                                                               |
-| 出现 `subAgentTask-*.md` | 按 frontmatter 的 `skill` / `type` 派发 subagent；完成后确认本地产物并继续等待提交                                                                                           |
+| 拦截页已打开但尚未提交 | 运行 `wait.command` 持续阻塞等待，不自行点击提交或开始生成                                                                                       |
+| `groupsData.json` 存在但没有 submitted 事件 | 不生成代码；继续运行 wait 命令等待用户确认/提交                                                                                                                               |
+| wait 返回 `handle_subagent_task` | 按 `task.skill` 派发 `task.path`；完成后确认本地产物和 task 删除，再次运行 wait                                                                                       |
 | 组件导入/组件登记等待中      | 消费 `subAgentTask-componentRegistration-*.md`；没有 task 时只按明确组件包/组件目录请求处理                                                                                             |
-| 等待提交超时                 | 停止本回合，等待用户回复继续后再重新读取同一路径                                                                                                                       |
+| wait 连接失败                 | 确认 `sloth server start` 已运行；不要降级为手工文件轮询                                                                                                                       |
 | 403 错误                     | 未配置有效 Figma Token，提示用户执行 `sloth config` 并配置 `mcp.figmaApiKey`，或使用 `--figma-api-key`                                                                  |
 | 404 错误                     | 设计稿未找到，提示用户核实 fileKey 和 nodeId                                                                                                                            |
 | Node 版本过低                | 检查用户 Node 版本是否 ≥ 18                                                                                                                                             |
